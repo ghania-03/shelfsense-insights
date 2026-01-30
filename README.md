@@ -1,24 +1,35 @@
-# Welcome to your Lovable project
+# Welcome to Shelf IQ
 
 ## Project info
+### Project Name: Shelf IQ
+### Type: Retail Intelligence Frontend Dashboard
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Shelf IQ is a data-driven frontend dashboard for analyzing product performance, shelf space optimization, and store layout effectiveness using interactive visualizations and actionable insights.
+
+## What is this project about?
+StoreSense provides actionable insights through:
+
+- Tail Analysis (Core / Average / Tail products)
+- Space Elasticity recommendations
+- Store Heatmap visualization (visual floor plan)
+- Data Import & Reporting
+- Authentication module
+- Light / Dark mode
+- Fully functional UI with realistic mock data
+
+This is a frontend-only prototype, built to closely resemble a production-ready analytics platform.
 
 ## How can I edit this code?
 
 There are several ways of editing your application.
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
 **Use your preferred IDE**
+You can work locally using any IDE (VS Code, WebStorm, etc.).
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+**Prerequisites**
+- Node.js
+- npm
+(Recommended installation via nvm)
 
 Follow these steps:
 
@@ -35,6 +46,7 @@ npm i
 # Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
+The application will start with hot-reloading and be available on your local development URL.
 
 **Edit a file directly in GitHub**
 
@@ -44,30 +56,45 @@ npm run dev
 
 **Use GitHub Codespaces**
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- Open the repository main page.
+- Click Code → Codespaces.
+- Select New codespace.
+- Edit files in the browser-based environment.
+- Commit and push changes when done.
+
+## Key Features
+- Dashboard
+- Tail Analysis
+- Space Elasticity
+- Store Heatmap
+- Data Import
+- Settings
+
+## UI & Experience
+- Fully responsive (desktop, tablet, mobile)
+- Light & Dark mode toggle
+- Unique and modern color palette
+- Clean layout with smooth interactions
+- User-friendly navigation and feedback states
 
 ## What technologies are used for this project?
-
 This project is built with:
-
-- Vite
-- TypeScript
 - React
-- shadcn-ui
+- Vite
 - Tailwind CSS
+- shadcn/ui
+- Charting libraries for rich data visualization
 
 ## How can I deploy this project?
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+This project can be deployed on any frontend hosting platform that supports Vite builds, such as:
 
-## Can I connect a custom domain to my Lovable project?
+- Vercel
+- Netlify
+- Cloudflare Pages
 
-Yes, you can!
+## Notes
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- This is a frontend-only prototype using realistic mock data.
+- All buttons, filters, and interactions are fully functional.
+- The project is structured for easy backend integration in the future.
