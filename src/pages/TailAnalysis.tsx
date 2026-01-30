@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { products, categories, monthLabels } from '@/data/mockData';
+import { useData } from '@/contexts/DataContext';
+import { categories, monthLabels } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,11 @@ import {
   Download,
   TrendingUp,
   TrendingDown,
+  Minus,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import {
   PieChart,
@@ -33,44 +38,59 @@ import {
   Line,
   Legend,
 } from 'recharts';
+import { downloadCSV } from '@/utils/exportUtils';
+import { toast } from 'sonner';
 
-type SortField = 'sku' | 'name' | 'category' | 'salesPercentage';
+type SortField = 'sku' | 'name' | 'category' | 'salesPercentage' | 'score';
 type SortDirection = 'asc' | 'desc';
 
 const CHART_COLORS = {
   core: 'hsl(142, 76%, 36%)',
+  average: 'hsl(38, 92%, 50%)',
   tail: 'hsl(0, 84%, 50%)',
   primary: 'hsl(168, 70%, 26%)',
   accent: 'hsl(189, 94%, 43%)',
 };
 
+const ITEMS_PER_PAGE = 15;
+
 export default function TailAnalysis() {
+  const { products } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [classificationFilter, setClassificationFilter] = useState('all');
   const [sortField, setSortField] = useState<SortField>('salesPercentage');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
 
-  const coreProducts = products.filter(p => !p.isTail);
-  const tailProducts = products.filter(p => p.isTail);
+  const coreProducts = products.filter(p => p.classification === 'core');
+  const averageProducts = products.filter(p => p.classification === 'average');
+  const tailProducts = products.filter(p => p.classification === 'tail');
 
   const corePercentage = Math.round((coreProducts.length / products.length) * 100);
-  const tailPercentage = 100 - corePercentage;
+  const averagePercentage = Math.round((averageProducts.length / products.length) * 100);
+  const tailPercentage = 100 - corePercentage - averagePercentage;
 
   const coreSalesContribution = coreProducts.reduce((sum, p) => sum + p.salesPercentage, 0);
+  const averageSalesContribution = averageProducts.reduce((sum, p) => sum + p.salesPercentage, 0);
   const tailSalesContribution = tailProducts.reduce((sum, p) => sum + p.salesPercentage, 0);
 
   const pieData = [
     { name: 'Core', value: coreProducts.length, sales: coreSalesContribution.toFixed(1) },
+    { name: 'Average', value: averageProducts.length, sales: averageSalesContribution.toFixed(1) },
     { name: 'Tail', value: tailProducts.length, sales: tailSalesContribution.toFixed(1) },
   ];
 
   const categoryBreakdown = categories.map(cat => {
     const catProducts = products.filter(p => p.category === cat.name);
-    const catCore = catProducts.filter(p => !p.isTail).length;
-    const catTail = catProducts.filter(p => p.isTail).length;
+    const catCore = catProducts.filter(p => p.classification === 'core').length;
+    const catAverage = catProducts.filter(p => p.classification === 'average').length;
+    const catTail = catProducts.filter(p => p.classification === 'tail').length;
     return {
       name: cat.name,
       core: catCore,
+      average: catAverage,
       tail: catTail,
       total: catProducts.length,
     };
@@ -78,8 +98,9 @@ export default function TailAnalysis() {
 
   const trendData = monthLabels.map((month, i) => ({
     month,
-    coreShare: Math.round(75 + (i * 0.8) + Math.random() * 3),
-    tailShare: Math.round(25 - (i * 0.8) - Math.random() * 3),
+    coreShare: Math.round(55 + (i * 0.5) + Math.random() * 3),
+    averageShare: Math.round(30 + Math.random() * 2),
+    tailShare: Math.round(15 - (i * 0.5) - Math.random() * 3),
   }));
 
   const filteredProducts = useMemo(() => {
@@ -99,6 +120,10 @@ export default function TailAnalysis() {
       filtered = filtered.filter(p => p.category === categoryFilter);
     }
 
+    if (classificationFilter !== 'all') {
+      filtered = filtered.filter(p => p.classification === classificationFilter);
+    }
+
     filtered.sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
@@ -114,12 +139,27 @@ export default function TailAnalysis() {
         case 'salesPercentage':
           comparison = a.salesPercentage - b.salesPercentage;
           break;
+        case 'score':
+          comparison = a.score - b.score;
+          break;
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
 
     return filtered;
-  }, [searchQuery, categoryFilter, sortField, sortDirection]);
+  }, [products, searchQuery, categoryFilter, classificationFilter, sortField, sortDirection]);
+
+  // Pagination
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredProducts.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredProducts, currentPage]);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, categoryFilter, classificationFilter, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -130,7 +170,56 @@ export default function TailAnalysis() {
     }
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    
+    try {
+      // Export filtered products
+      const exportData = filteredProducts.map(p => ({
+        SKU: p.sku,
+        'Product Name': p.name,
+        Category: p.category,
+        Price: `$${p.price.toFixed(2)}`,
+        'Shelf Space (m)': p.shelfSpace,
+        'Sales %': p.salesPercentage.toFixed(2),
+        Score: p.score.toFixed(1),
+        Classification: p.classification.charAt(0).toUpperCase() + p.classification.slice(1),
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief delay for UX
+      downloadCSV(exportData, `tail-analysis-${new Date().toISOString().split('T')[0]}`);
+      toast.success('Export completed', {
+        description: `${exportData.length} products exported to CSV`,
+      });
+    } catch (error) {
+      toast.error('Export failed', {
+        description: 'Please try again',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const uniqueCategories = [...new Set(products.map(p => p.category))];
+
+  const getClassificationBadge = (classification: string) => {
+    switch (classification) {
+      case 'core':
+        return <span className="badge-core">Core</span>;
+      case 'average':
+        return <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning border border-warning/20">Average</span>;
+      case 'tail':
+        return <span className="badge-tail">Tail</span>;
+      default:
+        return null;
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 7) return 'text-success';
+    if (score >= 4) return 'text-warning';
+    return 'text-destructive';
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -161,6 +250,21 @@ export default function TailAnalysis() {
 
         <div className="kpi-card">
           <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+              <Minus className="w-5 h-5 text-warning" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Average Products</p>
+              <p className="text-xl font-bold text-foreground">{averageProducts.length}</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {averagePercentage}% of SKUs → {averageSalesContribution.toFixed(1)}% of sales
+          </p>
+        </div>
+
+        <div className="kpi-card">
+          <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-destructive/10 flex items-center justify-center">
               <TrendingDown className="w-5 h-5 text-destructive" />
             </div>
@@ -176,32 +280,17 @@ export default function TailAnalysis() {
 
         <div className="kpi-card">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-warning" />
+            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Pareto Ratio</p>
-              <p className="text-xl font-bold text-foreground">20/80</p>
+              <p className="text-sm text-muted-foreground">Pareto Insight</p>
+              <p className="text-xl font-bold text-foreground">{corePercentage}/{Math.round(coreSalesContribution)}</p>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            ~20% products drive ~80% of sales
+            {corePercentage}% products drive {Math.round(coreSalesContribution)}% sales
           </p>
-        </div>
-
-        <div className="kpi-card">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Avg Sales/SKU</p>
-              <p className="text-xl font-bold text-foreground">
-                {(100 / products.length).toFixed(2)}%
-              </p>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">Expected contribution per SKU</p>
         </div>
       </div>
 
@@ -209,7 +298,7 @@ export default function TailAnalysis() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pie Chart */}
         <div className="chart-container">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Core vs Tail Split</h3>
+          <h3 className="text-sm font-semibold text-foreground mb-4">Product Distribution</h3>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -223,6 +312,7 @@ export default function TailAnalysis() {
                   dataKey="value"
                 >
                   <Cell fill={CHART_COLORS.core} />
+                  <Cell fill={CHART_COLORS.average} />
                   <Cell fill={CHART_COLORS.tail} />
                 </Pie>
                 <Tooltip
@@ -239,10 +329,14 @@ export default function TailAnalysis() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex justify-center gap-6 mt-2">
+          <div className="flex justify-center gap-4 mt-2">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS.core }} />
               <span className="text-sm text-muted-foreground">Core</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS.average }} />
+              <span className="text-sm text-muted-foreground">Average</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS.tail }} />
@@ -275,6 +369,7 @@ export default function TailAnalysis() {
                 />
                 <Legend />
                 <Bar dataKey="core" name="Core" stackId="a" fill={CHART_COLORS.core} />
+                <Bar dataKey="average" name="Average" stackId="a" fill={CHART_COLORS.average} />
                 <Bar dataKey="tail" name="Tail" stackId="a" fill={CHART_COLORS.tail} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -284,7 +379,7 @@ export default function TailAnalysis() {
 
       {/* Trend Chart */}
       <div className="chart-container">
-        <h3 className="text-sm font-semibold text-foreground mb-4">Core/Tail Trend (6 Months)</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-4">Distribution Trend (6 Months)</h3>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trendData}>
@@ -306,6 +401,14 @@ export default function TailAnalysis() {
                 stroke={CHART_COLORS.core}
                 strokeWidth={2}
                 dot={{ fill: CHART_COLORS.core }}
+              />
+              <Line
+                type="monotone"
+                dataKey="averageShare"
+                name="Average Share"
+                stroke={CHART_COLORS.average}
+                strokeWidth={2}
+                dot={{ fill: CHART_COLORS.average }}
               />
               <Line
                 type="monotone"
@@ -345,8 +448,23 @@ export default function TailAnalysis() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm">
-              <Download className="w-4 h-4 mr-2" />
+            <Select value={classificationFilter} onValueChange={setClassificationFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="core">Core</SelectItem>
+                <SelectItem value="average">Average</SelectItem>
+                <SelectItem value="tail">Tail</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>
+              {isExporting ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
               Export
             </Button>
           </div>
@@ -392,11 +510,20 @@ export default function TailAnalysis() {
                     <ArrowUpDown className="w-3 h-3" />
                   </button>
                 </th>
+                <th>
+                  <button
+                    onClick={() => handleSort('score')}
+                    className="flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    Score
+                    <ArrowUpDown className="w-3 h-3" />
+                  </button>
+                </th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map(product => (
+              {paginatedProducts.map(product => (
                 <tr key={product.sku} className="group">
                   <td className="font-mono text-sm">{product.sku}</td>
                   <td className="font-medium">{product.name}</td>
@@ -407,7 +534,9 @@ export default function TailAnalysis() {
                         <div
                           className={cn(
                             'h-full rounded-full',
-                            product.isTail ? 'bg-destructive' : 'bg-success'
+                            product.classification === 'core' && 'bg-success',
+                            product.classification === 'average' && 'bg-warning',
+                            product.classification === 'tail' && 'bg-destructive'
                           )}
                           style={{ width: `${Math.min(product.salesPercentage * 20, 100)}%` }}
                         />
@@ -416,22 +545,67 @@ export default function TailAnalysis() {
                     </div>
                   </td>
                   <td>
-                    {product.isTail ? (
-                      <span className="badge-tail">Tail</span>
-                    ) : (
-                      <span className="badge-core">Core</span>
-                    )}
+                    <span className={cn('font-medium', getScoreColor(product.score))}>
+                      {product.score.toFixed(1)}
+                    </span>
                   </td>
+                  <td>{getClassificationBadge(product.classification)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
+        {/* Pagination */}
         <div className="p-4 border-t border-border flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {filteredProducts.length} of {products.length} products
+            Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredProducts.length)} of {filteredProducts.length} products
           </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Previous
+            </Button>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? 'default' : 'outline'}
+                    size="sm"
+                    className="w-9"
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+            >
+              Next
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
