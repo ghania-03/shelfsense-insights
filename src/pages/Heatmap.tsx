@@ -1,14 +1,7 @@
-import React, { useState } from 'react';
-import { heatmapData } from '@/data/mockData';
+import React, { useState, useMemo } from 'react';
+import { useData } from '@/contexts/DataContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Map,
   Download,
@@ -17,26 +10,43 @@ import {
   TrendingDown,
   AlertTriangle,
   Eye,
+  Loader2,
+  FileText,
 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { downloadCSV, downloadPDF, generateTableHTML, generateSummaryHTML } from '@/utils/exportUtils';
+import { toast } from 'sonner';
+import { HeatmapZone } from '@/data/mockData';
 
-const getPerformanceColor = (performance: number) => {
-  if (performance >= 70) return 'bg-blue-500 hover:bg-blue-400';
-  if (performance >= 40) return 'bg-orange-500 hover:bg-orange-400';
+type ViewMode = 'performance' | 'traffic';
+
+const getPerformanceColor = (value: number) => {
+  if (value >= 70) return 'bg-blue-500 hover:bg-blue-400';
+  if (value >= 40) return 'bg-orange-500 hover:bg-orange-400';
   return 'bg-red-500 hover:bg-red-400';
 };
 
-const getPerformanceLabel = (performance: number) => {
-  if (performance >= 70) return 'High';
-  if (performance >= 40) return 'Medium';
+const getTrafficColor = (value: number) => {
+  if (value >= 70) return 'bg-emerald-500 hover:bg-emerald-400';
+  if (value >= 40) return 'bg-yellow-500 hover:bg-yellow-400';
+  return 'bg-rose-500 hover:bg-rose-400';
+};
+
+const getValueColor = (value: number, mode: ViewMode) => {
+  return mode === 'performance' ? getPerformanceColor(value) : getTrafficColor(value);
+};
+
+const getPerformanceLabel = (value: number) => {
+  if (value >= 70) return 'High';
+  if (value >= 40) return 'Medium';
   return 'Low';
 };
 
-const getTrafficColor = (traffic: string) => {
+const getTrafficLabel = (traffic: string) => {
   switch (traffic) {
     case 'high':
       return 'text-success';
@@ -50,15 +60,17 @@ const getTrafficColor = (traffic: string) => {
 };
 
 export default function Heatmap() {
-  const [selectedZone, setSelectedZone] = useState<typeof heatmapData[0] | null>(null);
-  const [viewMode, setViewMode] = useState<'performance' | 'traffic'>('performance');
+  const { heatmapData, isLoading } = useData();
+  const [selectedZone, setSelectedZone] = useState<HeatmapZone | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('performance');
+  const [isExporting, setIsExporting] = useState(false);
 
   // Group by rows
-  const rows = [
+  const rows = useMemo(() => [
     heatmapData.filter(d => d.y === 0),
     heatmapData.filter(d => d.y === 1),
     heatmapData.filter(d => d.y === 2),
-  ];
+  ], [heatmapData]);
 
   const highPerformanceZones = heatmapData.filter(d => d.performance >= 70);
   const lowPerformanceZones = heatmapData.filter(d => d.performance < 40);
@@ -69,6 +81,91 @@ export default function Heatmap() {
   const avgPerformance = Math.round(
     heatmapData.reduce((sum, d) => sum + d.performance, 0) / heatmapData.length
   );
+
+  const getCurrentValue = (zone: HeatmapZone) => {
+    return viewMode === 'performance' ? zone.performance : zone.trafficScore;
+  };
+
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      const exportData = heatmapData.map(zone => ({
+        Zone: zone.zone,
+        Category: zone.category,
+        'Traffic Level': zone.traffic,
+        'Traffic Score': zone.trafficScore,
+        'Performance %': zone.performance,
+        Position: `Row ${zone.y + 1}, Col ${zone.x + 1}`,
+        Status: zone.performance >= 70 ? 'High' : zone.performance >= 40 ? 'Medium' : 'Low',
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      downloadCSV(exportData, `heatmap-${viewMode}-${new Date().toISOString().split('T')[0]}`);
+      toast.success('Export completed', {
+        description: 'Heatmap data exported to CSV',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPDF = () => {
+    const summaryItems = [
+      { label: 'Total Zones', value: `${heatmapData.length}` },
+      { label: 'High Performers', value: `${highPerformanceZones.length} zones (70%+ efficiency)` },
+      { label: 'Low Performers', value: `${lowPerformanceZones.length} zones (<40% efficiency)` },
+      { label: 'Misaligned Zones', value: `${misalignedZones.length}` },
+      { label: 'Average Performance', value: `${avgPerformance}%` },
+    ];
+    
+    const tableHeaders = ['Zone', 'Category', 'Traffic', 'Traffic Score', 'Performance', 'Status'];
+    const tableRows = heatmapData.map(zone => [
+      zone.zone,
+      zone.category,
+      zone.traffic,
+      `${zone.trafficScore}%`,
+      `${zone.performance}%`,
+      zone.performance >= 70 ? 'High' : zone.performance >= 40 ? 'Medium' : 'Low',
+    ]);
+    
+    const content = `
+      <h2>Summary</h2>
+      ${generateSummaryHTML(summaryItems)}
+      <h2>Zone Details</h2>
+      ${generateTableHTML(tableHeaders, tableRows)}
+      <h2>Optimization Recommendations</h2>
+      <div class="summary">
+        ${misalignedZones.length > 0 ? `
+          <h4>Misaligned Zones (High Traffic + Low Performance):</h4>
+          <ul>
+            ${misalignedZones.filter(z => z.traffic === 'high' && z.performance < 50).map(z => 
+              `<li>${z.zone} (${z.category}): ${z.performance}% performance in high-traffic area - consider moving core products here</li>`
+            ).join('')}
+          </ul>
+        ` : '<p>No major misalignments detected</p>'}
+      </div>
+    `;
+    
+    downloadPDF('Store Heatmap Analysis', content);
+    toast.success('PDF report opened', {
+      description: 'Print or save the report from the new window',
+    });
+  };
+
+  const getLegendColors = () => {
+    if (viewMode === 'performance') {
+      return [
+        { color: 'bg-blue-500', label: 'High (70%+)' },
+        { color: 'bg-orange-500', label: 'Medium (40-70%)' },
+        { color: 'bg-red-500', label: 'Low (<40%)' },
+      ];
+    }
+    return [
+      { color: 'bg-emerald-500', label: 'High Traffic' },
+      { color: 'bg-yellow-500', label: 'Medium Traffic' },
+      { color: 'bg-rose-500', label: 'Low Traffic' },
+    ];
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -81,25 +178,50 @@ export default function Heatmap() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'performance' | 'traffic')}>
-            <SelectTrigger className="w-[160px]">
+          <div className="flex items-center border border-border rounded-lg overflow-hidden">
+            <Button
+              variant={viewMode === 'performance' ? 'default' : 'ghost'}
+              size="sm"
+              className="rounded-none"
+              onClick={() => setViewMode('performance')}
+            >
+              <TrendingUp className="w-4 h-4 mr-2" />
+              Performance
+            </Button>
+            <Button
+              variant={viewMode === 'traffic' ? 'default' : 'ghost'}
+              size="sm"
+              className="rounded-none"
+              onClick={() => setViewMode('traffic')}
+            >
               <Eye className="w-4 h-4 mr-2" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="performance">Performance</SelectItem>
-              <SelectItem value="traffic">Traffic</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline">
-            <Download className="w-4 h-4 mr-2" />
-            Export
+              Traffic
+            </Button>
+          </div>
+          <Button 
+            variant="outline"
+            onClick={handleExportCSV}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            CSV
+          </Button>
+          <Button onClick={handleExportPDF}>
+            <FileText className="w-4 h-4 mr-2" />
+            PDF
           </Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={cn(
+        "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4",
+        isLoading && "opacity-50"
+      )}>
         <div className="kpi-card">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -155,22 +277,21 @@ export default function Heatmap() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Heatmap Grid */}
-        <div className="lg:col-span-2 chart-container">
+        <div className={cn(
+          "lg:col-span-2 chart-container",
+          isLoading && "opacity-50"
+        )}>
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-semibold text-foreground">Store Floor Plan</h3>
+            <h3 className="text-sm font-semibold text-foreground">
+              Store Floor Plan - {viewMode === 'performance' ? 'Performance' : 'Traffic'} View
+            </h3>
             <div className="flex items-center gap-4 text-xs">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-blue-500" />
-                <span className="text-muted-foreground">High</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-orange-500" />
-                <span className="text-muted-foreground">Medium</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-red-500" />
-                <span className="text-muted-foreground">Low</span>
-              </div>
+              {getLegendColors().map(item => (
+                <div key={item.label} className="flex items-center gap-2">
+                  <div className={cn('w-4 h-4 rounded', item.color)} />
+                  <span className="text-muted-foreground">{item.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -195,19 +316,19 @@ export default function Heatmap() {
                           onClick={() => setSelectedZone(zone)}
                           className={cn(
                             'heatmap-cell aspect-square flex flex-col items-center justify-center p-3 text-white transition-all duration-200',
-                            getPerformanceColor(zone.performance),
+                            getValueColor(getCurrentValue(zone), viewMode),
                             selectedZone?.zone === zone.zone && 'ring-2 ring-white ring-offset-2 ring-offset-background'
                           )}
                         >
                           <span className="text-sm font-bold">{zone.zone}</span>
-                          <span className="text-xs opacity-90">{zone.performance}%</span>
+                          <span className="text-xs opacity-90">{getCurrentValue(zone)}%</span>
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs">
                         <div className="space-y-1">
                           <p className="font-semibold">{zone.zone}: {zone.category}</p>
                           <p className="text-sm">Performance: {zone.performance}%</p>
-                          <p className="text-sm">Traffic: {zone.traffic}</p>
+                          <p className="text-sm">Traffic: {zone.traffic} ({zone.trafficScore}%)</p>
                         </div>
                       </TooltipContent>
                     </Tooltip>
@@ -278,9 +399,12 @@ export default function Heatmap() {
 
                 <div className="flex justify-between items-center p-3 rounded-lg bg-muted/30">
                   <span className="text-sm text-muted-foreground">Traffic Level</span>
-                  <span className={cn('font-medium capitalize', getTrafficColor(selectedZone.traffic))}>
-                    {selectedZone.traffic}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('font-medium capitalize', getTrafficLabel(selectedZone.traffic))}>
+                      {selectedZone.traffic}
+                    </span>
+                    <span className="text-sm text-muted-foreground">({selectedZone.trafficScore}%)</span>
+                  </div>
                 </div>
 
                 <div className="flex justify-between items-center p-3 rounded-lg bg-muted/30">

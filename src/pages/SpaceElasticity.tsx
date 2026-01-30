@@ -1,5 +1,5 @@
-import React from 'react';
-import { categories } from '@/data/mockData';
+import React, { useState } from 'react';
+import { useData } from '@/contexts/DataContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,6 +9,8 @@ import {
   Maximize2,
   Download,
   RefreshCw,
+  Loader2,
+  FileText,
 } from 'lucide-react';
 import {
   BarChart,
@@ -21,6 +23,8 @@ import {
   Legend,
   Cell,
 } from 'recharts';
+import { downloadCSV, downloadPDF, generateTableHTML, generateSummaryHTML } from '@/utils/exportUtils';
+import { toast } from 'sonner';
 
 const CHART_COLORS = {
   current: 'hsl(168, 70%, 26%)',
@@ -29,6 +33,10 @@ const CHART_COLORS = {
 };
 
 export default function SpaceElasticity() {
+  const { categories, recalculateSpaceElasticity, isLoading } = useData();
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  
   const totalSpace = categories.reduce((sum, cat) => sum + cat.currentSpace, 0);
   
   const spaceData = categories.map(cat => ({
@@ -49,6 +57,89 @@ export default function SpaceElasticity() {
     categories.reduce((sum, cat) => sum + cat.efficiency, 0) / categories.length
   );
 
+  const handleRecalculate = async () => {
+    setIsRecalculating(true);
+    try {
+      await recalculateSpaceElasticity();
+      toast.success('Recalculation complete', {
+        description: 'Space recommendations have been updated based on current data',
+      });
+    } catch (error) {
+      toast.error('Recalculation failed', {
+        description: 'Please try again',
+      });
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      const exportData = spaceData.map(cat => ({
+        Category: cat.name,
+        'Current Space (m)': cat.current,
+        'Sales %': cat.sales,
+        'Recommended Space (m)': cat.recommended,
+        'Variance (m)': cat.variance,
+        'Variance %': cat.variancePercent,
+        'Efficiency %': cat.efficiency,
+        Action: cat.variance < 0 ? 'Reduce' : cat.variance > 0 ? 'Increase' : 'Optimal',
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      downloadCSV(exportData, `space-elasticity-${new Date().toISOString().split('T')[0]}`);
+      toast.success('Export completed', {
+        description: 'Space elasticity report exported to CSV',
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPDF = () => {
+    const summaryItems = [
+      { label: 'Total Space', value: `${totalSpace}m` },
+      { label: 'Space to Reallocate', value: `${totalSavings}m from ${overAllocated.length} categories` },
+      { label: 'Under-allocated Categories', value: `${underAllocated.length}` },
+      { label: 'Average Efficiency', value: `${avgEfficiency}%` },
+    ];
+    
+    const tableHeaders = ['Category', 'Current (m)', 'Sales %', 'Recommended (m)', 'Variance', 'Efficiency', 'Action'];
+    const tableRows = spaceData.map(cat => [
+      cat.name,
+      `${cat.current}m`,
+      `${cat.sales}%`,
+      `${cat.recommended}m`,
+      `${cat.variance > 0 ? '+' : ''}${cat.variance}m (${cat.variancePercent}%)`,
+      `${cat.efficiency}%`,
+      cat.variance < 0 ? 'Reduce' : cat.variance > 0 ? 'Increase' : 'Optimal',
+    ]);
+    
+    const content = `
+      <h2>Summary</h2>
+      ${generateSummaryHTML(summaryItems)}
+      <h2>Space Allocation Details</h2>
+      ${generateTableHTML(tableHeaders, tableRows)}
+      <h2>Recommendations</h2>
+      <div class="summary">
+        <h4>Categories to Reduce:</h4>
+        <ul>
+          ${overAllocated.map(cat => `<li>${cat.name}: ${cat.variance}m (${cat.variancePercent}%)</li>`).join('')}
+        </ul>
+        <h4>Categories to Increase:</h4>
+        <ul>
+          ${underAllocated.map(cat => `<li>${cat.name}: +${cat.variance}m (+${cat.variancePercent}%)</li>`).join('')}
+        </ul>
+      </div>
+    `;
+    
+    downloadPDF('Space Elasticity Analysis', content);
+    toast.success('PDF report opened', {
+      description: 'Print or save the report from the new window',
+    });
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
@@ -60,19 +151,42 @@ export default function SpaceElasticity() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline">
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button 
+            variant="outline" 
+            onClick={handleRecalculate}
+            disabled={isRecalculating || isLoading}
+          >
+            {isRecalculating ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
             Recalculate
           </Button>
-          <Button>
-            <Download className="w-4 h-4 mr-2" />
-            Export Report
+          <Button 
+            variant="outline"
+            onClick={handleExportCSV}
+            disabled={isExporting}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            CSV
+          </Button>
+          <Button onClick={handleExportPDF}>
+            <FileText className="w-4 h-4 mr-2" />
+            PDF Report
           </Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={cn(
+        "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4",
+        (isRecalculating || isLoading) && "opacity-50 pointer-events-none"
+      )}>
         <div className="kpi-card">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -127,7 +241,10 @@ export default function SpaceElasticity() {
       </div>
 
       {/* Comparison Chart */}
-      <div className="chart-container">
+      <div className={cn(
+        "chart-container",
+        (isRecalculating || isLoading) && "opacity-50"
+      )}>
         <h3 className="text-sm font-semibold text-foreground mb-4">
           Current vs Recommended Space Allocation
         </h3>
@@ -160,7 +277,10 @@ export default function SpaceElasticity() {
       </div>
 
       {/* Efficiency Chart */}
-      <div className="chart-container">
+      <div className={cn(
+        "chart-container",
+        (isRecalculating || isLoading) && "opacity-50"
+      )}>
         <h3 className="text-sm font-semibold text-foreground mb-4">
           Space Efficiency by Category
         </h3>
@@ -198,7 +318,10 @@ export default function SpaceElasticity() {
       </div>
 
       {/* Data Table */}
-      <div className="card-elevated overflow-hidden">
+      <div className={cn(
+        "card-elevated overflow-hidden",
+        (isRecalculating || isLoading) && "opacity-50"
+      )}>
         <div className="p-4 border-b border-border">
           <h3 className="text-lg font-semibold text-foreground">Space Allocation Details</h3>
         </div>

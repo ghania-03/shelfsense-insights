@@ -1,17 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { salesSummary, stores, categories, products, monthLabels } from '@/data/mockData';
+import { useData } from '@/contexts/DataContext';
+import { stores, categories, monthLabels } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import {
   Package,
   TrendingUp,
   TrendingDown,
+  Minus,
   DollarSign,
   ArrowUpRight,
   ArrowDownRight,
   Store,
   Calendar,
   Filter,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +39,7 @@ import {
   Line,
   Legend,
 } from 'recharts';
+import { toast } from 'sonner';
 
 interface KPICardProps {
   title: string;
@@ -88,16 +92,22 @@ const CHART_COLORS = {
   violet: 'hsl(263, 70%, 50%)',
 };
 
-const PIE_COLORS = [CHART_COLORS.success, CHART_COLORS.destructive];
+const PIE_COLORS = [CHART_COLORS.success, CHART_COLORS.warning, CHART_COLORS.destructive];
 
 export default function DashboardHome() {
   const { user } = useAuth();
+  const { products, salesSummary, filters, setFilters, applyFilters, isLoading } = useData();
+  
+  const [localStoreId, setLocalStoreId] = useState(filters.storeId);
+  const [localDateRange, setLocalDateRange] = useState(filters.dateRange);
 
-  const coreCount = products.filter(p => !p.isTail).length;
-  const tailCount = products.filter(p => p.isTail).length;
+  const coreCount = products.filter(p => p.classification === 'core').length;
+  const averageCount = products.filter(p => p.classification === 'average').length;
+  const tailCount = products.filter(p => p.classification === 'tail').length;
 
   const pieData = [
     { name: 'Core Products', value: coreCount, percentage: salesSummary.coreItemsPercentage },
+    { name: 'Average Products', value: averageCount, percentage: salesSummary.averageItemsPercentage },
     { name: 'Tail Products', value: tailCount, percentage: salesSummary.tailItemsPercentage },
   ];
 
@@ -109,9 +119,27 @@ export default function DashboardHome() {
 
   const trendData = monthLabels.map((month, i) => ({
     month,
-    core: Math.round(75 + Math.random() * 10),
-    tail: Math.round(15 + Math.random() * 8),
+    core: Math.round(55 + Math.random() * 10),
+    average: Math.round(30 + Math.random() * 5),
+    tail: Math.round(12 + Math.random() * 5),
   }));
+
+  const handleApplyFilters = async () => {
+    setFilters({ storeId: localStoreId, dateRange: localDateRange });
+    await applyFilters();
+    
+    const storeName = stores.find(s => s.id === localStoreId)?.name || 'Unknown';
+    const dateLabels: Record<string, string> = {
+      '7d': 'Last 7 days',
+      '30d': 'Last 30 days',
+      '90d': 'Last 90 days',
+      '6m': 'Last 6 months',
+    };
+    
+    toast.success('Filters applied', {
+      description: `Showing ${storeName} - ${dateLabels[localDateRange]}`,
+    });
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -128,7 +156,7 @@ export default function DashboardHome() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
-          <Select defaultValue="1">
+          <Select value={localStoreId} onValueChange={setLocalStoreId}>
             <SelectTrigger className="w-[180px] h-10">
               <Store className="w-4 h-4 mr-2 text-muted-foreground" />
               <SelectValue placeholder="Select store" />
@@ -142,7 +170,7 @@ export default function DashboardHome() {
             </SelectContent>
           </Select>
 
-          <Select defaultValue="7d">
+          <Select value={localDateRange} onValueChange={setLocalDateRange}>
             <SelectTrigger className="w-[140px] h-10">
               <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
               <SelectValue placeholder="Date range" />
@@ -155,14 +183,26 @@ export default function DashboardHome() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="icon" className="h-10 w-10">
-            <Filter className="w-4 h-4" />
+          <Button 
+            onClick={handleApplyFilters} 
+            disabled={isLoading}
+            className="h-10"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Filter className="w-4 h-4 mr-2" />
+            )}
+            Apply
           </Button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 stagger-children">
+      <div className={cn(
+        "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 stagger-children",
+        isLoading && "opacity-50 pointer-events-none"
+      )}>
         <KPICard
           title="Total SKUs"
           value={salesSummary.totalSKUs.toLocaleString()}
@@ -182,13 +222,13 @@ export default function DashboardHome() {
           accentColor="bg-success/10"
         />
         <KPICard
-          title="Tail Items"
-          value={`${salesSummary.tailItemsPercentage}%`}
-          change={-0.8}
+          title="Average Items"
+          value={`${salesSummary.averageItemsPercentage}%`}
+          change={0.5}
           changeLabel="of total SKUs"
-          trend="down"
-          icon={<TrendingDown className="w-6 h-6 text-destructive" />}
-          accentColor="bg-destructive/10"
+          trend="neutral"
+          icon={<Minus className="w-6 h-6 text-warning" />}
+          accentColor="bg-warning/10"
         />
         <KPICard
           title="Total Sales"
@@ -196,13 +236,16 @@ export default function DashboardHome() {
           change={5.8}
           changeLabel="vs last month"
           trend="up"
-          icon={<DollarSign className="w-6 h-6 text-warning" />}
-          accentColor="bg-warning/10"
+          icon={<DollarSign className="w-6 h-6 text-accent" />}
+          accentColor="bg-accent/10"
         />
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={cn(
+        "grid grid-cols-1 lg:grid-cols-3 gap-6",
+        isLoading && "opacity-50 pointer-events-none"
+      )}>
         {/* Core vs Tail Pie Chart */}
         <div className="chart-container lg:col-span-1">
           <h3 className="text-sm font-semibold text-foreground mb-4">Product Distribution</h3>
@@ -234,7 +277,7 @@ export default function DashboardHome() {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="flex justify-center gap-6 mt-4">
+          <div className="flex flex-wrap justify-center gap-4 mt-4">
             {pieData.map((entry, index) => (
               <div key={entry.name} className="flex items-center gap-2">
                 <div
@@ -282,7 +325,10 @@ export default function DashboardHome() {
       </div>
 
       {/* Trend Line Chart */}
-      <div className="chart-container">
+      <div className={cn(
+        "chart-container",
+        isLoading && "opacity-50 pointer-events-none"
+      )}>
         <h3 className="text-sm font-semibold text-foreground mb-4">Performance Trend (6 Months)</h3>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -308,6 +354,14 @@ export default function DashboardHome() {
               />
               <Line
                 type="monotone"
+                dataKey="average"
+                name="Average Sales %"
+                stroke={CHART_COLORS.warning}
+                strokeWidth={2}
+                dot={{ fill: CHART_COLORS.warning, strokeWidth: 2 }}
+              />
+              <Line
+                type="monotone"
                 dataKey="tail"
                 name="Tail Sales %"
                 stroke={CHART_COLORS.destructive}
@@ -327,7 +381,7 @@ export default function DashboardHome() {
             <span className="text-sm font-medium text-foreground">Top Insight</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">15 products</span> contribute to 80% of your total sales. Consider increasing shelf space for these core items.
+            <span className="font-semibold text-foreground">{coreCount} products</span> contribute to {salesSummary.coreItemsPercentage}% of your total sales. Consider increasing shelf space for these core items.
           </p>
         </div>
         <div className="card-elevated p-5">
@@ -345,7 +399,7 @@ export default function DashboardHome() {
             <span className="text-sm font-medium text-foreground">Action Required</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">14 tail products</span> are occupying prime shelf positions. Review the heatmap for placement optimization.
+            <span className="font-semibold text-foreground">{tailCount} tail products</span> are occupying prime shelf positions. Review the heatmap for placement optimization.
           </p>
         </div>
       </div>
