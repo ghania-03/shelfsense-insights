@@ -6,6 +6,10 @@ Shelf IQ is a frontend dashboard for exploring retail product performance, shelf
 
 The interface brings together retail analysis views and tools for exploring and exporting dashboard data. It is a frontend prototype: it does not connect to a backend or a live data service.
 
+## Live Demo
+
+**Frontend:** https://shelfsense-insights.vercel.app
+
 ## Features
 
 - Dashboard with store and date-range filters
