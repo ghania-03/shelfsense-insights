@@ -8,7 +8,7 @@ The interface brings together retail analysis views and tools for exploring and 
 
 ## Live Demo
 
-**Frontend:** https://shelfsense-insights.vercel.app
+**Live Demo:** [View](https://shelfsense-insights.vercel.app ) 
 
 ## Features
 
