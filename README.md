@@ -1,100 +1,68 @@
-# Welcome to Shelf IQ
+# Shelf IQ
 
-## Project info
-### Project Name: Shelf IQ
-### Type: Retail Intelligence Frontend Dashboard
+Shelf IQ is a frontend dashboard for exploring retail product performance, shelf-space allocation, and store layouts. It currently uses sample data and runs entirely in the browser.
 
-Shelf IQ is a data-driven frontend dashboard for analyzing product performance, shelf space optimization, and store layout effectiveness using interactive visualizations and actionable insights.
+## Overview
 
-## What is this project about?
-StoreSense provides actionable insights through:
+The interface brings together retail analysis views and tools for exploring and exporting dashboard data. It is a frontend prototype: it does not connect to a backend or a live data service.
 
-- Tail Analysis (Core / Average / Tail products)
-- Space Elasticity recommendations
-- Store Heatmap visualization (visual floor plan)
-- Data Import & Reporting
-- Authentication module
-- Light / Dark mode
-- Fully functional UI with realistic mock data
+## Features
 
-This is a frontend-only prototype, built to closely resemble a production-ready analytics platform.
+- Dashboard with store and date-range filters
+- Product tail analysis
+- Space elasticity views and recommendations
+- Store heatmap visualization
+- CSV data import interface and CSV exports
+- Login and signup flows backed by in-memory demo users
+- Settings, theme selection, and browser-local preferences
 
-## How can I edit this code?
+The dashboard's current data is defined in `src/data/mockData.ts`. Import and authentication flows are client-side demonstrations, not connections to a server.
 
-There are several ways of editing your application.
+## Technology
 
-**Use your preferred IDE**
-You can work locally using any IDE (VS Code, WebStorm, etc.).
-
-**Prerequisites**
-- Node.js
-- npm
-(Recommended installation via nvm)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-The application will start with hot-reloading and be available on your local development URL.
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Open the repository main page.
-- Click Code → Codespaces.
-- Select New codespace.
-- Edit files in the browser-based environment.
-- Commit and push changes when done.
-
-## Key Features
-- Dashboard
-- Tail Analysis
-- Space Elasticity
-- Store Heatmap
-- Data Import
-- Settings
-
-## UI & Experience
-- Fully responsive (desktop, tablet, mobile)
-- Light & Dark mode toggle
-- Unique and modern color palette
-- Clean layout with smooth interactions
-- User-friendly navigation and feedback states
-
-## What technologies are used for this project?
-This project is built with:
-- React
+- React 18 and TypeScript
 - Vite
 - Tailwind CSS
-- shadcn/ui
-- Charting libraries for rich data visualization
+- React Router
+- Recharts
+- Radix UI and shadcn/ui components
+- Lucide icons
 
-## How can I deploy this project?
+## Project structure
 
-This project can be deployed on any frontend hosting platform that supports Vite builds, such as:
+```text
+shelfsense-insights/
+├── public/           Static assets
+├── src/
+│   ├── components/   Shared layout, navigation, and UI components
+│   ├── contexts/     Authentication, data, settings, and theme state
+│   ├── data/         Sample retail data
+│   ├── pages/        Dashboard, analysis, import, and settings screens
+│   └── utils/        Export helpers
+├── index.html
+├── package.json
+├── tailwind.config.ts
+├── tsconfig.json
+└── vite.config.ts
+```
 
-- Vercel
-- Netlify
-- Cloudflare Pages
+## Run locally
 
-## Notes
+Requirements: Node.js and npm.
 
-- This is a frontend-only prototype using realistic mock data.
-- All buttons, filters, and interactions are fully functional.
-- The project is structured for easy backend integration in the future.
+```sh
+git clone https://github.com/ghania-03/shelfsense-insights.git
+cd shelfsense-insights
+npm install
+npm run dev
+```
+
+Vite serves the development app on port `8080` by default. No environment variables are required.
+
+To create a production build locally, run `npm run build`. This command builds the frontend; it does not deploy or connect the project to a hosted service.
+
+## Current limitations
+
+- Retail data is sample data bundled with the frontend.
+- Authentication is a local demo flow and is not server-backed.
+- Imported data and preferences are handled in the browser; there is no backend or live API.
